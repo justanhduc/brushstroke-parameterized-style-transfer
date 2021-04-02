@@ -48,7 +48,7 @@ assert style_img.size() == content_img.size(), \
 
 class ContentLoss(nn.Module):
 
-    def __init__(self, target,):
+    def __init__(self, target, ):
         super(ContentLoss, self).__init__()
         # we 'detach' the target content from the tree used
         # to dynamically compute the gradient: this is a stated value,
@@ -86,9 +86,11 @@ class StyleLoss(nn.Module):
         self.loss = F.mse_loss(G, self.target)
         return input
 
+
 cnn = models.vgg19(pretrained=True).features.to(device).eval()
 cnn_normalization_mean = torch.tensor([0.485, 0.456, 0.406]).to(device)
 cnn_normalization_std = torch.tensor([0.229, 0.224, 0.225]).to(device)
+
 
 # create a module to normalize input image so we can easily put it in a
 # nn.Sequential
@@ -194,7 +196,8 @@ def run_style_transfer(cnn, normalization_mean, normalization_std, content_img, 
     """Run the style transfer."""
     print('Building the style transfer model..')
     model, style_losses, content_losses = get_style_model_and_losses(cnn,
-        normalization_mean, normalization_std, style_img, content_img)
+                                                                     normalization_mean, normalization_std, style_img,
+                                                                     content_img)
     optimizer = get_input_optimizer()
 
     print('Optimizing..')

@@ -34,11 +34,13 @@ def stroke_renderer(stroke_params: T.Tensor, n_samples=10, temp=8., img_size=256
 
     coords = T.linspace(0, 1, img_size).to(stroke_params.device)
     coords = T.stack(T.meshgrid((coords, coords)), dim=2)
-    coords_coarse = F.interpolate(coords.permute(2, 0, 1)[None], (int(.1 * img_size), int(.1 * img_size)))[0].permute(1, 2, 0).contiguous()
+    coords_coarse = F.interpolate(coords.permute(2, 0, 1)[None],
+                                  (int(.1 * img_size), int(.1 * img_size)))[0].permute(1, 2, 0).contiguous()
     strokes_pos = T.stack((p0, p1, p2), dim=1)
     dists = T.min(T.sum((coords_coarse[:, :, None, None] - strokes_pos[None, None]) ** 2, dim=-1), dim=-1)[0]
     nearest_stroke_indices = T.topk(dists, k, largest=False, dim=-1)[1]
-    nearest_stroke_indices = F.interpolate(nearest_stroke_indices.float().permute(2, 0, 1)[None], (img_size, img_size), mode='nearest')[0].permute(1, 2, 0).contiguous().long()
+    nearest_stroke_indices = F.interpolate(nearest_stroke_indices.float().permute(2, 0, 1)[None],
+                                           (img_size, img_size), mode='nearest')[0].permute(1, 2, 0).contiguous().long()
 
     # samples = T.rand(stroke_params.shape[0], n_samples).to(stroke_params.device)
     samples = T.linspace(0, 1, 10).to(stroke_params.device)[None]
