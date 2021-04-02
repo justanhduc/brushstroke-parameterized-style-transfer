@@ -14,16 +14,18 @@ import torchvision.transforms as transforms
 import torchvision.models as models
 
 import copy
-from imageio import imwrite
+from neuralnet_pytorch import monitor as mon
 
 from param_stroke import stroke_renderer
 
+mon.model_name = 'nst-stroke'
+mon.set_path()
+mon.backup(('nst.py', 'param_stroke.py'))
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-output_folder = 'outputs'
-os.makedirs(output_folder, exist_ok=True)
 
 # desired size of the output image
-imsize = 128 if torch.cuda.is_available() else 128  # use small size if no gpu
+imsize = 256 if torch.cuda.is_available() else 128  # use small size if no gpu
 
 loader = transforms.Compose([
     transforms.Resize(imsize),  # scale imported image
@@ -172,22 +174,22 @@ def get_style_model_and_losses(cnn, normalization_mean, normalization_std,
 
 
 # input_img = content_img.clone()
-num_strokes = 512
-p0 = T.randn(num_strokes, 2).to(device).requires_grad_(True)
-p1 = T.randn(num_strokes, 2).to(device).requires_grad_(True)
-p2 = T.randn(num_strokes, 2).to(device).requires_grad_(True)
-swidths = T.randn(num_strokes, 3).to(device).requires_grad_(True)
-scolors = T.randn(num_strokes, 3).to(device).requires_grad_(True)
+num_strokes = 5000
+p = T.randn(num_strokes, 2).to(device)
+p0 = T.nn.Parameter(p.clone(), requires_grad=True)
+p1 = T.nn.Parameter(p.clone() + T.randn(num_strokes, 2).to(device) * .1, requires_grad=True)
+p2 = T.nn.Parameter(p.clone() + T.randn(num_strokes, 2).to(device) * .1, requires_grad=True)
+swidths = T.zeros(num_strokes, 1, requires_grad=True, device=device)
+scolors = T.randn(num_strokes, 3, requires_grad=True, device=device)
 
 
 def get_input_optimizer():
     # this line to show that input is a parameter that requires a gradient
-    optimizer = optim.LBFGS([p0, p1, p2, swidths, scolors])
+    optimizer = optim.Adam([p0, p1, p2, swidths, scolors], lr=3e-3)
     return optimizer
 
 
-def run_style_transfer(cnn, normalization_mean, normalization_std,
-                       content_img, style_img, num_steps=10000,
+def run_style_transfer(cnn, normalization_mean, normalization_std, content_img, style_img, num_steps=20000,
                        style_weight=1000000, content_weight=1):
     """Run the style transfer."""
     print('Building the style transfer model..')
@@ -196,15 +198,13 @@ def run_style_transfer(cnn, normalization_mean, normalization_std,
     optimizer = get_input_optimizer()
 
     print('Optimizing..')
-    run = [0]
-    while run[0] <= num_steps:
-
+    for step in mon.iter_batch(range(num_steps)):
         def closure():
             # correct the values of updated input image
             # input_img.data.clamp_(0, 1)
 
             optimizer.zero_grad()
-            input_img = stroke_renderer(T.cat((p0, p1, p2, swidths, scolors), dim=-1), 10., 10, img_size=imsize)
+            input_img = stroke_renderer(T.cat((p0, p1, p2, swidths, scolors), dim=-1), temp=100., img_size=imsize)
             input_img = input_img[None].permute(0, 3, 1, 2).contiguous()
             model(input_img)
             style_score = 0
@@ -221,24 +221,16 @@ def run_style_transfer(cnn, normalization_mean, normalization_std,
             loss = style_score + content_score
             loss.backward()
 
-            run[0] += 1
-            if run[0] % 50 == 0:
-                imwrite(f'{output_folder}/stylized_{run[0]}.jpg', input_img[0].permute(1, 2, 0).detach().cpu().numpy())
-                print("run {}:".format(run))
-                print('Style Loss : {:4f} Content Loss: {:4f}'.format(
-                    style_score.item(), content_score.item()))
-                print()
+            mon.plot('style loss', style_score.item())
+            mon.plot('content loss', content_score.item())
+            if step % 50 == 0:
+                mon.imwrite('stylized', input_img)
 
             return style_score + content_score
 
         optimizer.step(closure)
 
-    # a last correction...
-    # input_img.data.clamp_(0, 1)
-    input_img = stroke_renderer(T.cat((p0, p1, p2, swidths, scolors), dim=-1), 10., 10, img_size=imsize)
-    return input_img
 
-
-output = run_style_transfer(cnn, cnn_normalization_mean, cnn_normalization_std,
-                            content_img, style_img)
+run_style_transfer(cnn, cnn_normalization_mean, cnn_normalization_std,
+                   content_img, style_img)
 print('Finished!')
