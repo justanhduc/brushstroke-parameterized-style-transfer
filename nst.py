@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 
 import torchvision.transforms as transforms
 import torchvision.models as models
+from torchvision.transforms import functional as TF
 
 import copy
 from neuralnet_pytorch import monitor as mon
@@ -19,6 +20,7 @@ from neuralnet_pytorch import monitor as mon
 from param_stroke import stroke_renderer
 
 mon.model_name = 'nst-stroke'
+mon.root = '/ssd2/duc/stroke_nst/results'
 mon.set_path()
 mon.backup(('nst.py', 'param_stroke.py'))
 
@@ -28,22 +30,23 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 imsize = 256 if torch.cuda.is_available() else 128  # use small size if no gpu
 
 loader = transforms.Compose([
-    transforms.Resize(imsize),  # scale imported image
+    transforms.CenterCrop(imsize),
     transforms.ToTensor()])  # transform it into a torch tensor
 
 
 def image_loader(image_name):
     image = Image.open(image_name)
+    w, h = image.size
+    new_w = imsize if w < h else int(imsize * w / h)
+    new_h = imsize if h < w else int(imsize * h / w)
+    image = TF.resize(image, (new_h, new_w))
     # fake batch dimension required to fit network's input dimensions
     image = loader(image).unsqueeze(0)
     return image.to(device, torch.float)
 
 
-style_img = image_loader("./images/picasso.jpg")
-content_img = image_loader("./images/dancing.jpg")
-
-assert style_img.size() == content_img.size(), \
-    "we need to import style and content images of the same size"
+style_img = image_loader("/ssd2/duc/stroke_nst/images/girl-on-a-divan.jpg")
+content_img = image_loader("/ssd2/duc/stroke_nst/images/golden-gate-bridge.jpg")
 
 
 class ContentLoss(nn.Module):
@@ -100,8 +103,8 @@ class Normalization(nn.Module):
         # .view the mean and std to make them [C x 1 x 1] so that they can
         # directly work with image Tensor of shape [B x C x H x W].
         # B is batch size. C is number of channels. H is height and W is width.
-        self.mean = torch.tensor(mean).view(-1, 1, 1)
-        self.std = torch.tensor(std).view(-1, 1, 1)
+        self.mean = mean.clone().detach().view(-1, 1, 1)
+        self.std = std.clone().detach().view(-1, 1, 1)
 
     def forward(self, img):
         # normalize img
@@ -177,28 +180,35 @@ def get_style_model_and_losses(cnn, normalization_mean, normalization_std,
 
 # input_img = content_img.clone()
 num_strokes = 5000
-p = T.randn(num_strokes, 2).to(device)
+p = T.rand(num_strokes, 2).to(device)
 p0 = T.nn.Parameter(p.clone(), requires_grad=True)
-p1 = T.nn.Parameter(p.clone() + T.randn(num_strokes, 2).to(device) * .1, requires_grad=True)
-p2 = T.nn.Parameter(p.clone() + T.randn(num_strokes, 2).to(device) * .1, requires_grad=True)
-swidths = T.zeros(num_strokes, 1, requires_grad=True, device=device)
+p1 = T.nn.Parameter(p.clone() + T.rand(num_strokes, 2).to(device) * .1, requires_grad=True)
+p2 = T.nn.Parameter(p.clone() + T.rand(num_strokes, 2).to(device) * .1, requires_grad=True)
+swidths = T.nn.Parameter(T.log(T.ones(num_strokes, 1, device=device) * 20.), requires_grad=True)
 scolors = T.randn(num_strokes, 3, requires_grad=True, device=device)
 
 
 def get_input_optimizer():
     # this line to show that input is a parameter that requires a gradient
     optimizer = optim.Adam([p0, p1, p2, swidths, scolors], lr=3e-3)
-    return optimizer
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, 1.)
+    return optimizer, scheduler
+
+
+def tv_loss(x):
+    diff_i = torch.mean(torch.abs(x[:, :, :, 1:] - x[:, :, :, :-1]))
+    diff_j = torch.mean(torch.abs(x[:, :, 1:, :] - x[:, :, :-1, :]))
+    loss = diff_i + diff_j
+    return loss
 
 
 def run_style_transfer(cnn, normalization_mean, normalization_std, content_img, style_img, num_steps=20000,
-                       style_weight=100000, content_weight=1):
+                       style_weight=1e4, content_weight=1, tv_weight=1.):
     """Run the style transfer."""
     print('Building the style transfer model..')
-    model, style_losses, content_losses = get_style_model_and_losses(cnn,
-                                                                     normalization_mean, normalization_std, style_img,
-                                                                     content_img)
-    optimizer = get_input_optimizer()
+    model, style_losses, content_losses = get_style_model_and_losses(cnn, normalization_mean, normalization_std,
+                                                                     style_img, content_img)
+    optimizer, scheduler = get_input_optimizer()
 
     print('Optimizing..')
     for step in mon.iter_batch(range(num_steps)):
@@ -207,7 +217,8 @@ def run_style_transfer(cnn, normalization_mean, normalization_std, content_img, 
             # input_img.data.clamp_(0, 1)
 
             optimizer.zero_grad()
-            input_img = stroke_renderer(T.cat((p0, p1, p2, swidths, scolors), dim=-1), temp=100., img_size=imsize)
+            input_img = stroke_renderer(content_img, T.cat((p0, p1, p2, swidths, scolors), dim=-1), temp=150.,
+                                        img_size=imsize, k=20)
             input_img = input_img[None].permute(0, 3, 1, 2).contiguous()
             model(input_img)
             style_score = 0
@@ -220,18 +231,21 @@ def run_style_transfer(cnn, normalization_mean, normalization_std, content_img, 
 
             style_score *= style_weight
             content_score *= content_weight
-
-            loss = style_score + content_score
+            tv_score = tv_weight * tv_loss(input_img)
+            loss = style_score + content_score + tv_score
             loss.backward()
 
             mon.plot('style loss', style_score.item())
             mon.plot('content loss', content_score.item())
-            if step % 50 == 0:
+            mon.plot('tv loss', tv_score.item())
+            mon.plot('learning rate', scheduler.get_last_lr()[0])
+            if step % 100 == 0:
                 mon.imwrite('stylized', input_img)
 
             return style_score + content_score
 
         optimizer.step(closure)
+        scheduler.step()
 
 
 run_style_transfer(cnn, cnn_normalization_mean, cnn_normalization_std,
