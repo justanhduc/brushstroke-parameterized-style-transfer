@@ -238,7 +238,7 @@ def run_style_transfer(cnn, normalization_mean, normalization_std, content_img, 
             mon.plot('style loss', style_score.item())
             mon.plot('content loss', content_score.item())
             mon.plot('tv loss', tv_score.item())
-            mon.plot('learning rate', scheduler.get_last_lr()[0])
+            mon.plot('learning rate', scheduler.get_last_lr()[0], filter_outliers=False)
             if step % 100 == 0:
                 mon.imwrite('stylized', input_img)
 
