@@ -1,7 +1,7 @@
 import torch as T
 from imageio import imwrite
 from torch.nn import functional as F
-from neuralnet_pytorch import monitor as mon
+from torch_cluster import knn
 
 
 def bezier_curve(p0: T.Tensor, p1: T.Tensor, p2: T.Tensor, t: T.Tensor):
@@ -44,8 +44,8 @@ def stroke_renderer(input: T.Tensor, stroke_params: T.Tensor, n_samples=10, temp
     strokes_pos = T.stack((p0, p1, p2), dim=1)
 
     # distance tensor
-    dists = T.min(T.sum((coords_coarse[:, :, None, None] - strokes_pos[None, None]) ** 2, dim=-1), dim=-1)[0]  # H'xW'xN
-    nearest_stroke_indices_ = T.topk(dists, k, largest=False, dim=-1)[1]  # take the nearest k stroke indices
+    nearest_stroke_indices_ = knn(strokes_pos.view(-1, 2), coords_coarse.view(-1, 2), k)
+    nearest_stroke_indices_ = nearest_stroke_indices_[1].view(new_img_size, new_img_size, k) // 3
     nearest_stroke_indices = F.interpolate(nearest_stroke_indices_.float().permute(2, 0, 1)[None],  # interpolate with nearest neighbor
                                            (img_size, img_size), mode='nearest')[0].permute(1, 2, 0).contiguous().long()
     # dists = T.min(T.sum((coords[:, :, None, None] - strokes_pos[None, None]) ** 2, dim=-1), dim=-1)[0]  # HxWxN
