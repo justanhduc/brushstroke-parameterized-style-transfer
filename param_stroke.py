@@ -16,7 +16,7 @@ def bezier_curve(p0: T.Tensor, p1: T.Tensor, p2: T.Tensor, t: T.Tensor):
     """
     t = t[..., None]
     p0, p1, p2 = p0[:, None], p1[:, None], p2[:, None]
-    return (1. - t ** 2.) * p0 + 2 * (1. - t) * t * p1 + t ** 2 * p2
+    return (1. - t) ** 2. * p0 + 2 * (1. - t) * t * p1 + t ** 2 * p2
 
 
 def stroke_renderer(input: T.Tensor, stroke_params: T.Tensor, n_samples=10, temp=8., img_size=256, k=20):
