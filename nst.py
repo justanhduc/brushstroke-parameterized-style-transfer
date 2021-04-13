@@ -30,23 +30,24 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 imsize = 256 if torch.cuda.is_available() else 128  # use small size if no gpu
 
 loader = transforms.Compose([
-    transforms.CenterCrop(imsize),
+    transforms.Resize((imsize, imsize)),
     transforms.ToTensor()])  # transform it into a torch tensor
 
 
-def image_loader(image_name):
+def image_loader(image_name, return_aspect_ratio=False):
     image = Image.open(image_name)
-    w, h = image.size
-    new_w = imsize if w < h else int(imsize * w / h)
-    new_h = imsize if h < w else int(imsize * h / w)
-    image = TF.resize(image, (new_h, new_w))
+    if return_aspect_ratio:
+        w, h = image.size
+        aspect_ratio = w / h
+
     # fake batch dimension required to fit network's input dimensions
     image = loader(image).unsqueeze(0)
-    return image.to(device, torch.float)
+    image = image.to(device, torch.float)
+    return image if not return_aspect_ratio else (image, aspect_ratio)
 
 
 style_img = image_loader("/ssd2/duc/stroke_nst/images/girl-on-a-divan.jpg")
-content_img = image_loader("/ssd2/duc/stroke_nst/images/golden-gate-bridge.jpg")
+content_img, aspect_ratio = image_loader("/ssd2/duc/stroke_nst/images/golden-gate-bridge.jpg", True)
 
 
 class ContentLoss(nn.Module):
@@ -180,19 +181,24 @@ def get_style_model_and_losses(cnn, normalization_mean, normalization_std,
 
 # input_img = content_img.clone()
 num_strokes = 5000
-p = T.rand(num_strokes, 2).to(device)
-p0 = T.nn.Parameter(p.clone(), requires_grad=True)
-p1 = T.nn.Parameter(p.clone() + T.rand(num_strokes, 2).to(device) * .1, requires_grad=True)
-p2 = T.nn.Parameter(p.clone() + T.rand(num_strokes, 2).to(device) * .1, requires_grad=True)
+c = T.nn.Parameter(T.rand(num_strokes, 2).to(device), requires_grad=True)
+p0 = T.nn.Parameter(T.rand(num_strokes, 2).to(device) * .1, requires_grad=True)
+p1 = T.nn.Parameter(T.rand(num_strokes, 2).to(device) * .1, requires_grad=True)
+p2 = T.nn.Parameter(T.rand(num_strokes, 2).to(device) * .1, requires_grad=True)
 swidths = T.nn.Parameter(T.log(T.ones(num_strokes, 1, device=device) * 20.), requires_grad=True)
-scolors = T.randn(num_strokes, 3, requires_grad=True, device=device)
+scolors = T.rand(num_strokes, 3, requires_grad=True, device=device)
 
 
-def get_input_optimizer():
+def get_stroke_optimizer():
     # this line to show that input is a parameter that requires a gradient
-    optimizer = optim.Adam([p0, p1, p2, swidths, scolors], lr=3e-3)
-    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, 1.)
-    return optimizer, scheduler
+    optimizer = optim.Adam([c, p0, p1, p2, swidths, scolors], lr=3e-3)
+    return optimizer
+
+
+def get_input_optimizer(input_image):
+    # this line to show that input is a parameter that requires a gradient
+    optimizer = optim.Adam([input_image.requires_grad_(True)], lr=1e-3)
+    return optimizer
 
 
 def tv_loss(x):
@@ -202,24 +208,85 @@ def tv_loss(x):
     return loss
 
 
-def run_style_transfer(cnn, normalization_mean, normalization_std, content_img, style_img, num_steps=20000,
-                       style_weight=1e4, content_weight=1, tv_weight=1.):
+def run_stroke_style_transfer(cnn, normalization_mean, normalization_std, content_img, style_img, num_steps=1000,
+                              style_weight=1e4, content_weight=1, tv_weight=1.):
     """Run the style transfer."""
-    print('Building the style transfer model..')
+    print('Building the brushstroke style transfer model..')
     model, style_losses, content_losses = get_style_model_and_losses(cnn, normalization_mean, normalization_std,
                                                                      style_img, content_img)
-    optimizer, scheduler = get_input_optimizer()
+    optimizer = get_stroke_optimizer()
 
     print('Optimizing..')
-    for step in mon.iter_batch(range(num_steps)):
+    for step in mon.iter_batch(range(1, num_steps + 1)):
         def closure():
             # correct the values of updated input image
             # input_img.data.clamp_(0, 1)
 
             optimizer.zero_grad()
-            input_img = stroke_renderer(content_img, T.cat((p0, p1, p2, swidths, scolors), dim=-1), temp=150.,
+            input_img = stroke_renderer(content_img, T.cat((c, p0, p1, p2, swidths, scolors), dim=-1), temp=150.,
                                         img_size=imsize, k=20)
             input_img = input_img[None].permute(0, 3, 1, 2).contiguous()
+            model(input_img)
+            style_score = 0
+            content_score = 0
+
+            for sl in style_losses:
+                style_score += sl.loss
+            for cl in content_losses:
+                content_score += cl.loss
+
+            style_score *= style_weight
+            content_score *= content_weight
+            tv_score = tv_weight * tv_loss(input_img)
+            loss = style_score + content_score + tv_score
+            loss.backward()
+
+            mon.plot('stroke style loss', style_score.item())
+            mon.plot('stroke content loss', content_score.item())
+            mon.plot('stroke tv loss', tv_score.item())
+            if step % 100 == 0:
+                mon.imwrite('stroke stylized', input_img)
+
+            return style_score + content_score
+
+        optimizer.step(closure)
+
+
+run_stroke_style_transfer(cnn, cnn_normalization_mean, cnn_normalization_std, content_img, style_img)
+# input_img = stroke_renderer(content_img, T.cat((p0, p1, p2, swidths, scolors), dim=-1), temp=150.,
+#                             img_size=imsize, k=20)
+# from imageio import imread
+# input_img = imread('/ssd2/duc/stroke_nst/results/nst-stroke/run-21/images/stylized_1000_0.jpg')
+# input_img = T.from_numpy(input_img).to(device) / 255.
+
+
+def run_neural_style_transfer(cnn, normalization_mean, normalization_std, content_img, style_img, input_img,
+                              num_steps=1000, style_weight=1e5, content_weight=1, tv_weight=1.):
+    """Run the style transfer."""
+    print('Building the neural style transfer model..')
+    # resize image to 1024 and keep aspect ratio
+    if aspect_ratio < 1:
+        w = 1024
+        new_img_size = (int(w / aspect_ratio), w)
+    else:
+        h = 1024
+        new_img_size = (h, int(h * aspect_ratio))
+
+    input_img = input_img.detach()[None].permute(0, 3, 1, 2).contiguous()
+    input_img = F.interpolate(input_img, new_img_size, mode='bilinear', align_corners=True)
+    content_img = F.interpolate(content_img, new_img_size, mode='bilinear', align_corners=True)
+    style_img = F.interpolate(style_img, new_img_size, mode='bilinear', align_corners=True)
+    model, style_losses, content_losses = get_style_model_and_losses(cnn, normalization_mean, normalization_std,
+                                                                     style_img, content_img)
+    optimizer = get_input_optimizer(input_img)
+
+    print('Optimizing..')
+    for step in mon.iter_batch(range(1, num_steps + 1)):
+        def closure():
+            # correct the values of updated input image
+            # input_img.data.clamp_(0, 1)
+
+            optimizer.zero_grad()
             model(input_img)
             style_score = 0
             content_score = 0
@@ -238,16 +305,13 @@ def run_style_transfer(cnn, normalization_mean, normalization_std, content_img, 
             mon.plot('style loss', style_score.item())
             mon.plot('content loss', content_score.item())
             mon.plot('tv loss', tv_score.item())
-            mon.plot('learning rate', scheduler.get_last_lr()[0], filter_outliers=False)
             if step % 100 == 0:
                 mon.imwrite('stylized', input_img)
 
             return style_score + content_score
 
         optimizer.step(closure)
-        scheduler.step()
 
 
-run_style_transfer(cnn, cnn_normalization_mean, cnn_normalization_std,
-                   content_img, style_img)
+# run_neural_style_transfer(cnn, cnn_normalization_mean, cnn_normalization_std, content_img, style_img, input_img)
 print('Finished!')
