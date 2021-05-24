@@ -1,6 +1,5 @@
 import torch as T
 import torch.nn as nn
-import torch.nn.init as init
 from neural_monitor import logger
 import h5py
 import numpy as np

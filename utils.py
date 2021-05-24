@@ -200,3 +200,9 @@ def gram_matrix(input):
     # we 'normalize' the values of the gram matrix
     # by dividing by the number of element in each feature maps.
     return G.div(a * b * c * d)
+
+
+def projection(z):
+    x = z[..., 0]
+    y = z[..., 1]
+    return T.stack([x ** 2, y ** 2, x * y], dim=-1)

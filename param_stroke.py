@@ -1,7 +1,9 @@
 import torch as T
-from imageio import imwrite
 from torch.nn import functional as F
 from torch_cluster import knn
+import numpy as np
+
+import utils
 
 
 # ---------------------------------------------------------------------
@@ -121,7 +123,7 @@ def stroke_renderer(curve_points: T.Tensor, locations: T.Tensor, colors: T.Tenso
 
     # compute t value for which each pixel is closest to each line that goes through each line segment (among nearest ones)
     t = T.sum(canvas_with_nearest_Bs_b_a * P_full_canvas_with_nearest_Bs_a, dim=-1) / (
-                T.sum(canvas_with_nearest_Bs_b_a ** 2, dim=-1) + 1e-8)
+            T.sum(canvas_with_nearest_Bs_b_a ** 2, dim=-1) + 1e-8)
 
     # if t value is outside [0, 1], then the nearest point on the line does not lie on the segment, so clip values of t
     t = T.clamp(t, 0., 1.)
@@ -143,24 +145,56 @@ def stroke_renderer(curve_points: T.Tensor, locations: T.Tensor, colors: T.Tenso
     bs = T.einsum('hwnf,hwn->hwf', canvas_with_nearest_Bs_bs, I_NNs_B_ranking)  # [H, W, 1]
     bs_mask = T.sigmoid(bs - D[..., None])
     canvas = T.ones_like(I_colors) * canvas_color
-    # if canvas_color == 'gray':
-    #     canvas *= .5
-    # elif canvas_color == 'black':
-    #     canvas *= 0.
-    # elif canvas_color == 'noise':
-    #     canvas = T.randn_like(I_colors) * 0.1
-
     I = I_colors * bs_mask + (1 - bs_mask) * canvas
     return I  # HxWx3
 
 
-if __name__ == '__main__':
-    import math
+class BrushStrokeRenderer(T.nn.Module):
+    def __init__(self, canvas_height, canvas_width, num_strokes=5000, samples_per_curve=10, strokes_per_pixel=20,
+                 canvas_color='gray', length_scale=1.1, width_scale=.1, content_img=None):
+        super().__init__()
+        if canvas_color == 'gray':
+            self.canvas_color = .5
+        elif canvas_color == 'black':
+            self.canvas_color = 0.
+        elif canvas_color == 'noise':
+            self.canvas_color = T.rand(canvas_height, canvas_width, 3) * 0.1
+        else:
+            self.canvas_color = 1.
 
-    strokes = T.tensor([
-        [.3, .5, .1, .1, .1, .2, .1, .1, math.log(10.), 0., 0., 1.],
-        [.1, .2, .01, .01, .0102, .014, .021, .03, math.log(20.), 1., 0., 0.],
-        [.8, .3, -.01, -.01, .01, .01, -.01, .01, math.log(5.), .0, 1, 0.]
-    ])
-    img = stroke_renderer(None, strokes, temp=150., k=2)
-    imwrite('strokes.jpg', img.detach().numpy())
+        self.canvas_height = canvas_height
+        self.canvas_width = canvas_width
+        self.num_strokes = num_strokes
+        self.samples_per_curve = samples_per_curve
+        self.strokes_per_pixel = strokes_per_pixel
+        self.length_scale = length_scale
+        self.width_scale = width_scale
+
+        # brush stroke init
+        if content_img is not None:
+            location, s, e, c, width, color = utils.initialize_brushstrokes(content_img, num_strokes,
+                                                                            canvas_height, canvas_width,
+                                                                            length_scale, width_scale)
+        else:
+            location, s, e, c, width, color = utils.initialize_brushstrokes(content_img, num_strokes,
+                                                                            canvas_height, canvas_width,
+                                                                            length_scale, width_scale, init='random')
+        location = location[..., ::-1]
+        s = s[..., ::-1]
+        e = e[..., ::-1]
+        c = c[..., ::-1]
+        self.curve_s = T.nn.Parameter(T.from_numpy(np.array(s, 'float32')), requires_grad=True)
+        self.curve_e = T.nn.Parameter(T.from_numpy(np.array(e, 'float32')), requires_grad=True)
+        self.curve_c = T.nn.Parameter(T.from_numpy(np.array(c, 'float32')), requires_grad=True)
+        self.color = T.nn.Parameter(T.from_numpy(color), requires_grad=True)
+        self.location = T.nn.Parameter(T.from_numpy(np.array(location, 'float32')), requires_grad=True)
+        self.width = T.nn.Parameter(T.from_numpy(width), requires_grad=True)
+
+    def forward(self):
+        curve_points = sample_quadratic_bezier_curve(s=self.curve_s + self.location,
+                                                     e=self.curve_e + self.location,
+                                                     c=self.curve_c + self.location,
+                                                     num_points=self.samples_per_curve)
+        canvas = stroke_renderer(curve_points, self.location, self.color, self.width,
+                                 self.canvas_height, self.canvas_width, self.strokes_per_pixel, self.canvas_color)
+        return canvas

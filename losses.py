@@ -65,20 +65,15 @@ class StyleTranferLosses(VGG19):
         return content_loss, style_loss
 
 
-def total_variation_loss(location, curve_s, curve_e, K=10):
-    def projection(z):
-        x = z[..., 0]
-        y = z[..., 1]
-        return T.stack([x ** 2, y ** 2, x * y], dim=-1)
-
+def total_variation_loss(location: T.Tensor, curve_s: T.Tensor, curve_e: T.Tensor, K=10):
     se_vec = curve_e - curve_s
     x_nn_idcs = knn_graph(location, k=K)[0]
     x_sig_nns = se_vec[x_nn_idcs].view(*((se_vec.shape[0], K) + se_vec.shape[1:]))
-    dist_to_centroid = T.mean(T.sum((projection(x_sig_nns) - projection(se_vec)[..., None, :]) ** 2, dim=-1))
+    dist_to_centroid = T.mean(T.sum((utils.projection(x_sig_nns) - utils.projection(se_vec)[..., None, :]) ** 2, dim=-1))
     return dist_to_centroid
 
 
-def curvature_loss(curve_s, curve_e, curve_c):
+def curvature_loss(curve_s: T.Tensor, curve_e: T.Tensor, curve_c: T.Tensor):
     v1 = curve_s - curve_c
     v2 = curve_e - curve_c
     dist_se = T.norm(curve_e - curve_s, dim=-1) + 1e-6
@@ -86,7 +81,7 @@ def curvature_loss(curve_s, curve_e, curve_c):
 
 
 def tv_loss(x):
-    diff_i = T.mean((x[:, :, :, 1:] - x[:, :, :, :-1]) ** 2)
-    diff_j = T.mean((x[:, :, 1:, :] - x[:, :, :-1, :]) ** 2)
+    diff_i = T.mean((x[..., :, 1:] - x[..., :, :-1]) ** 2)
+    diff_j = T.mean((x[..., 1:, :] - x[..., :-1, :]) ** 2)
     loss = diff_i + diff_j
     return loss
