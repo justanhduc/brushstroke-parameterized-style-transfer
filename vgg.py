@@ -67,6 +67,9 @@ class VGG19(T.nn.Sequential):
         self.conv5_3 = ConvRelu(512, 512)
         self.conv5_4 = ConvRelu(512, 512)
         self.pool5 = nn.MaxPool2d(2, stride=2)
+        for p in self.parameters():
+            p.requires_grad_(False)
+
         self.load_params(weight_file)
 
     def load_params(self, param_file):

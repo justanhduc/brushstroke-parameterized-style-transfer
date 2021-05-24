@@ -70,8 +70,8 @@ width_scale = 0.1
 
 
 def run_stroke_style_transfer(num_steps=100, style_weight=3., content_weight=1., tv_weight=0.008, curv_weight=4):
-    vgg_loss = losses.StyleTranferLosses(vgg_weight_file, content_img, style_img,
-                                         bs_content_layers, bs_style_layers, scale_by_y=True)
+    vgg_loss = losses.StyleTransferLosses(vgg_weight_file, content_img, style_img,
+                                          bs_content_layers, bs_style_layers, scale_by_y=True)
     vgg_loss.to(device).eval()
 
     # brush stroke init
@@ -123,8 +123,8 @@ def run_style_transfer(input_img: T.Tensor, num_steps=1000, style_weight=10000.,
     input_img = F.resize(input_img, 1024)
     input_img = T.nn.Parameter(input_img, requires_grad=True)
 
-    vgg_loss = losses.StyleTranferLosses(vgg_weight_file, content_img_resized, style_img,
-                                         px_content_layers, px_style_layers)
+    vgg_loss = losses.StyleTransferLosses(vgg_weight_file, content_img_resized, style_img,
+                                          px_content_layers, px_style_layers)
     vgg_loss.to(device).eval()
     optimizer = optim.Adam([input_img], lr=1e-3)
     logger.info('Optimizing pixel-wise canvas..')

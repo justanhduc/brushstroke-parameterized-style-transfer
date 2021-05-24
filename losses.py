@@ -6,10 +6,10 @@ import utils
 from vgg import VGG19
 
 
-class StyleTranferLosses(VGG19):
+class StyleTransferLosses(VGG19):
     def __init__(self, weight_file, content_img: T.Tensor, style_img: T.Tensor, content_layers, style_layers,
                  scale_by_y=False, content_weights=None, style_weights=None):
-        super(StyleTranferLosses, self).__init__(weight_file)
+        super(StyleTransferLosses, self).__init__(weight_file)
 
         self.content_layers = content_layers
         self.style_layers = style_layers
