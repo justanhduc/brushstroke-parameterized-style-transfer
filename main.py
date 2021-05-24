@@ -6,7 +6,6 @@ from torchvision.transforms import functional as F
 from neural_monitor import monitor as mon
 from neural_monitor import logger
 import argparse
-import sys
 
 from param_stroke import BrushStrokeRenderer
 import utils
@@ -38,7 +37,7 @@ content_img_file = args.content_img_file
 # setup logging
 model_name = 'nst-stroke'
 root = args.output_path
-vgg_weight_file = '/ssd2/duc/stroke_nst/vgg_weights/vgg19_weights_normalized.h5'
+vgg_weight_file = 'vgg_weights/vgg19_weights_normalized.h5'
 print_freq = 10
 mon.initialize(model_name=model_name, root=root, print_freq=print_freq)
 mon.backup(('main.py', 'param_stroke.py', 'utils.py', 'losses.py', 'vgg.py'))

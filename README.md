@@ -15,7 +15,8 @@ This is a Pytorch implementation of the paper
 
 [Neural monitor](https://github.com/justanhduc/neuralnet-pytorch) (For logging)
 
-[VGG pretrained weight file](https://github.com/ftokarev/tf-vgg-weights/raw/master/vgg19_weights_normalized.h5)
+[VGG pretrained weight file](https://github.com/ftokarev/tf-vgg-weights/raw/master/vgg19_weights_normalized.h5) 
+(Put it in `vgg_weights` folder in root)
 
 ## Running the code
 
