@@ -2,33 +2,40 @@
 
 This is a Pytorch implementation of the paper 
 ["Rethinking Style Transfer: From Pixels to Parameterized Brushstrokes"](http://arxiv.org/abs/2103.17185).
-At the moment, due to missing details and the 
-[official code](https://github.com/CompVis/brushstroke-parameterized-style-transfer) 
-not yet available, this implementation only serves as a proof-of-concept. 
-The algorithm will be modified once the official code is available.
+
+<p align='center'>
+  <img src='assets/elefant-girl-on-a-divan_1000_0.jpg' height="300px">
+  <img src='assets/golden-gate-bridge-starry_night_1000_0.jpg' height="300px">
+  <img src='assets/road-picasso_1000_0.jpg' height="300px">
+</p>
 
 ## Prerequisites
 
-[Neuralnet-pytorch](https://github.com/justanhduc/neuralnet-pytorch) (For logging)
+[Pytorch cluster](https://github.com/rusty1s/pytorch_cluster)
+
+[Neural monitor](https://github.com/justanhduc/neuralnet-pytorch) (For logging)
+
+[VGG pretrained weight file](https://github.com/ftokarev/tf-vgg-weights/raw/master/vgg19_weights_normalized.h5)
 
 ## Running the code
 
 ```
-python nst.py
+python main.py /path/to/content/image /path/to/style/image
 ```
 
-## Differences from the paper
+Type `python main.py` to see all available options.
 
-- The visual quality is not good as images suffer from blocking artifacts 
-due to the nearest neighbor upsampling in Section C2 in the supplementary.
-- The stroke mask is implemented without the 2-norm, 
-  as the mask formula seems to be wrong.
-- The logit of the softmax is negative in the assignment tensor.
-- The learning rate is `1e-3`.
-- The optimization runs for 20,000 steps.
-- The weights of loss terms probably are different, 
-  as they are not mentioned in the paper
-  
-## Results
+## Similarities/differences to the official implementation
 
-(TBU)
+Similarities
+- The renderer and the initialization schemes are no-brainer adaptations from the 
+official repo.
+- The training schemes (including learning rates and optimizers) are the same.
+- The visual results look largely similar.
+
+Differences
+- Some minor details regarding the style losses are different.
+
+## References
+
+[Official Tensorflow implementation](https://github.com/CompVis/brushstroke-parameterized-style-transfer)
