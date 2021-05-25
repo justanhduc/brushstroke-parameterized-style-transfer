@@ -4,6 +4,7 @@ from neural_monitor import logger
 import h5py
 import numpy as np
 import torch.nn.functional as F
+import os
 
 import utils
 
@@ -73,13 +74,17 @@ class VGG19(T.nn.Sequential):
         self.load_params(weight_file)
 
     def load_params(self, param_file):
-        if param_file is not None:
-            f = h5py.File(param_file, mode='r')
-            trained = [np.array(layer[1], 'float32') for layer in list(f.items())]
-            weight_value_tuples = []
-            for p, tp in zip(self.parameters(), trained):
-                if len(tp.shape) == 4:
-                    tp = np.transpose(tp, (3, 2, 0, 1))
-                weight_value_tuples.append((p, tp))
-            utils.batch_set_value(*zip(*(weight_value_tuples)))
-            logger.info('Pretrained weights loaded successfully!')
+        if not os.path.exists(param_file):
+
+            utils.download_file('https://github.com/ftokarev/tf-vgg-weights/raw/master/vgg19_weights_normalized.h5',
+                                param_file)
+
+        f = h5py.File(param_file, mode='r')
+        trained = [np.array(layer[1], 'float32') for layer in list(f.items())]
+        weight_value_tuples = []
+        for p, tp in zip(self.parameters(), trained):
+            if len(tp.shape) == 4:
+                tp = np.transpose(tp, (3, 2, 0, 1))
+            weight_value_tuples.append((p, tp))
+        utils.batch_set_value(*zip(*(weight_value_tuples)))
+        logger.info('Pretrained weights loaded successfully!')

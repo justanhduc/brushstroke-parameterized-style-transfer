@@ -1,9 +1,12 @@
+import os
 import torch as T
 import numpy as np
 from skimage.segmentation import slic
 from scipy.spatial import ConvexHull
 from PIL import Image
 import torchvision.transforms as transforms
+import requests
+from neural_monitor import logger
 
 loader = lambda imsize: transforms.Compose([
     transforms.Resize(imsize),
@@ -206,3 +209,33 @@ def projection(z):
     x = z[..., 0]
     y = z[..., 1]
     return T.stack([x ** 2, y ** 2, x * y], dim=-1)
+
+
+def download_file(url, name):
+    if not os.path.exists(name):
+        logger.info(f'Downloading {url} into {name}...')
+
+        filedir, filename = os.path.split(name)
+        os.makedirs(filedir, exist_ok=True)
+
+        response = requests.get(url, stream=True)
+        total_size_in_bytes = int(response.headers.get('content-length', 0))
+        ckpt_file_temp = name + '.temp'
+
+        received = 0
+        i = 0
+        with open(ckpt_file_temp, 'wb') as file:
+            for data in response.iter_content(chunk_size=1024):
+                received += len(data)
+                file.write(data)
+                percentage = 100. * received / total_size_in_bytes
+                if i * 25 <= int(percentage) <= i * 27:
+                    logger.info(f'Downloaded {int(percentage)}%')
+                    i += 1
+
+        if total_size_in_bytes != 0 and received != total_size_in_bytes:
+            logger.error('An error occurred while downloading, please try again.')
+            if os.path.exists(ckpt_file_temp):
+                os.remove(ckpt_file_temp)
+        else:
+            os.rename(ckpt_file_temp, name)
