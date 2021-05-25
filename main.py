@@ -1,4 +1,5 @@
 import os
+import sys
 import torch
 import torch as T
 import torch.optim as optim
@@ -28,7 +29,11 @@ parser.add_argument('--output_path', '-o', type=str, default='results',
                     help='Storage for results. Default: `results`.')
 parser.add_argument('--device', '-d', type=str, default='cuda',
                     help='Device to perform stylization. Default: `cuda`.')
-args = parser.parse_args()
+try:
+    args = parser.parse_args()
+except:
+    parser.print_help()
+    sys.exit(0)
 
 # inputs
 style_img_file = args.style_img_file
@@ -116,7 +121,7 @@ def run_stroke_style_transfer(num_steps=100, style_weight=3., content_weight=1.,
         return bs_renderer()
 
 
-def run_style_transfer(input_img: T.Tensor, num_steps=1000, style_weight=10000., content_weight=1., tv_weight=0.):
+def run_style_transfer(input_img: T.Tensor, num_steps=1000, style_weight=10000., content_weight=1., tv_weight=0):
     content_img_resized = F.resize(content_img, 1024)
 
     input_img = input_img.detach()[None].permute(0, 3, 1, 2).contiguous()
@@ -143,7 +148,9 @@ def run_style_transfer(input_img: T.Tensor, num_steps=1000, style_weight=10000.,
         # plot some stuffs
         mon.plot('pixel style loss', style_score)
         mon.plot('pixel content loss', content_score)
-        mon.plot('pixel tv loss', tv_score)
+        if tv_weight:
+            mon.plot('pixel tv loss', tv_score)
+
         if mon.iter % mon.print_freq == 0:
             mon.imwrite('pixel stylized', input)
 
