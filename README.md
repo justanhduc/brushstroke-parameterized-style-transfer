@@ -11,9 +11,11 @@ This is a Pytorch implementation of the paper
 
 ## Prerequisites
 
+[Pytorch](https://pytorch.org/) (>= 1.8 (required))
+
 [Pytorch cluster](https://github.com/rusty1s/pytorch_cluster)
 
-[Neural monitor](https://github.com/justanhduc/neuralnet-pytorch) (For logging)
+[Neural monitor](https://github.com/justanhduc/neural-monitor) (For logging)
 
 ## Running the code
 
